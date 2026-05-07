@@ -52,3 +52,25 @@ def get_professor() -> Agent:
         ),
         llm=llm_groq,
     )
+
+
+def get_examiner() -> Agent:
+    """
+    Crea l'agente esaminatore che interroga lo studente in stile socratico.
+
+    Returns:
+        Agent CrewAI senza tool, dedicato a interrogazione e valutazione.
+    """
+    return Agent(
+        role="Esaminatore Socratico",
+        goal=(
+            "Interrogare lo studente in modo mirato e valutare le sue risposte "
+            "con severità ma in modo didattico, assegnando un voto da 1 a 10"
+        ),
+        backstory=(
+            "Esaminatore universitario di lunga esperienza, applica il metodo socratico: "
+            "pone domande progressive per smascherare lacune, fornisce feedback rigoroso "
+            "ma costruttivo e conclude sempre con una valutazione numerica da 1 a 10."
+        ),
+        llm=llm_groq,
+    )
