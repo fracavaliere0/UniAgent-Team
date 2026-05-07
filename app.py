@@ -39,6 +39,32 @@ def render_mermaid(payload: str) -> None:
 
 st.set_page_config(page_title="UniAgent", page_icon="🎓")
 
+# Stile globale dell'app: bottoni personalizzati e UI più pulita.
+st.markdown(
+    """
+<style>
+    /* Stile per i bottoni */
+    div.stButton > button:first-child {
+        background-color: #4F46E5;
+        color: white;
+        border-radius: 8px;
+        border: none;
+        padding: 0.5rem 1rem;
+        font-weight: bold;
+        transition: all 0.3s ease;
+    }
+    div.stButton > button:first-child:hover {
+        background-color: #4338CA;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    /* Nascondi il menu di default di Streamlit per un look più pulito */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 # Inizializzazione dello stato di sessione condiviso tra le modalità.
 if "step" not in st.session_state:
     st.session_state.step = 1
@@ -57,12 +83,14 @@ def reset_simulazione() -> None:
 
 # ------------------------------- SIDEBAR -------------------------------
 with st.sidebar:
-    st.header("⚙️ Configurazione")
+    st.header("Impostazioni Studio 📚")
 
     nome_pdf: str = st.text_input(
         "Nome del file PDF (in data/raw_pdfs/)",
         value="test.pdf",
     )
+
+    st.divider()
 
     modalita: str = st.radio(
         "Modalità di Studio",
@@ -111,8 +139,9 @@ if modalita == "Mentore Socratico":
     elif st.session_state.step == 2:
         st.subheader("Step 2 · Rispondi alla domanda dell'Examiner")
 
-        st.markdown("**Domanda d'esame:**")
-        st.markdown(st.session_state.domanda_generata)
+        st.info(
+            f"🎓 **Il Professore chiede:**\n\n{st.session_state.domanda_generata}"
+        )
 
         risposta_studente: str = st.text_area(
             "La tua risposta",
@@ -142,7 +171,7 @@ if modalita == "Mentore Socratico":
                         )
                         risultato_valutazione = crew_valutazione.kickoff()
 
-                    st.markdown("### 📋 Valutazione")
+                    st.success("Ecco il tuo feedback:")
                     st.markdown(str(risultato_valutazione))
 
         with colonna_reset:
