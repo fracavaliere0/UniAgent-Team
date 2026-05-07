@@ -2,7 +2,7 @@
 
 from crewai import Task
 
-from src.agents import get_examiner, get_librarian
+from src.agents import get_examiner, get_librarian, get_mapper
 
 
 def create_question_tasks(argomento: str, nome_file_pdf: str) -> list[Task]:
@@ -121,3 +121,75 @@ def create_evaluation_tasks(
     )
 
     return [task_ricerca_verita, task_valutazione]
+
+
+def create_map_tasks(argomento: str, nome_file_pdf: str) -> list[Task]:
+    """
+    Crea i task per generare una mappa concettuale in sintassi Mermaid.js.
+
+    Flusso:
+        1. Il Librarian estrae dal PDF i concetti chiave e le loro relazioni.
+        2. Il Mapper trasforma i concetti in un diagramma 'graph LR' Mermaid.
+
+    Args:
+        argomento: Argomento di studio scelto dallo studente.
+        nome_file_pdf: Nome del PDF presente in data/raw_pdfs/.
+
+    Returns:
+        Lista ordinata dei task da eseguire nel workflow CrewAI.
+    """
+    librarian = get_librarian()
+    mapper = get_mapper()
+
+    # 1) Estrazione concetti e relazioni logiche dal PDF.
+    task_estrazione_relazioni: Task = Task(
+        description=(
+            f"Usa il tuo tool per leggere il file PDF '{nome_file_pdf}' e individua "
+            f"i concetti chiave relativi all'argomento '{argomento}' insieme alle "
+            f"loro relazioni logiche (gerarchie, dipendenze, cause-effetto). "
+            f"Restituisci un elenco strutturato che evidenzi sia i concetti sia "
+            f"i collegamenti tra di essi."
+        ),
+        expected_output=(
+            "Un testo strutturato con i concetti chiave e le loro relazioni logiche, "
+            "pronto per essere convertito in un diagramma."
+        ),
+        agent=librarian,
+    )
+
+    # 2) Conversione dei concetti in un diagramma Mermaid 'graph LR'.
+    task_generazione_mappa: Task = Task(
+        description=(
+            f"Prendi i concetti e le relazioni forniti dal Librarian sull'argomento "
+            f"'{argomento}' e generali sotto forma di diagramma a blocchi in "
+            f"sintassi Mermaid.js.\n\n"
+            f"REGOLE FERREE per la generazione del codice Mermaid:\n"
+            f"1. DIREZIONE ORIZZONTALE: usa OBBLIGATORIAMENTE 'graph LR' "
+            f"(Left to Right) e MAI 'graph TD'.\n"
+            f"2. TESTO BREVISSIMO: ogni nodo deve contenere MASSIMO 3 o 4 parole. "
+            f"Usa acronimi o parole chiave. MAI frasi lunghe o descrizioni estese.\n"
+            f"3. STRUTTURA GERARCHICA SEMPLICE: non creare troppi incroci complessi, "
+            f"mantieni un flusso pulito da sinistra a destra senza ramificazioni "
+            f"intricate.\n"
+            f"4. Evita caratteri speciali strani nei nomi dei nodi "
+            f"(no accenti grafici, parentesi non bilanciate, virgolette doppie, "
+            f"trattini lunghi, emoji, simboli matematici): preferisci nomi brevi "
+            f"in lettere semplici e numeri.\n"
+            f"5. Restituisci ESCLUSIVAMENTE il blocco di codice markdown Mermaid, "
+            f"senza testo aggiuntivo prima o dopo."
+        ),
+        expected_output=(
+            "Un blocco di codice markdown formattato RIGOROSAMENTE come segue, "
+            "che inizia con ```mermaid e termina con ```, con direzione 'graph LR' "
+            "e nodi composti da MASSIMO 3-4 parole ciascuno:\n\n"
+            "```mermaid\n"
+            "graph LR\n"
+            "    A[Concetto Chiave] --> B[Sotto Concetto 1]\n"
+            "    A --> C[Sotto Concetto 2]\n"
+            "```\n\n"
+            "Nessun testo deve essere presente al di fuori del blocco di codice."
+        ),
+        agent=mapper,
+    )
+
+    return [task_estrazione_relazioni, task_generazione_mappa]

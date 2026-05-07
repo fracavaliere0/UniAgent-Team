@@ -13,6 +13,11 @@ llm_groq = LLM(
     model="groq/llama-3.3-70b-versatile"
 )
 
+# Istanza LLM più piccola e veloce per compiti di formattazione
+llm_groq_small = LLM(
+    model="groq/llama-3.1-8b-instant"
+)
+
 
 def get_librarian() -> Agent:
     """
@@ -73,4 +78,23 @@ def get_examiner() -> Agent:
             "ma costruttivo e conclude sempre con una valutazione numerica da 1 a 10."
         ),
         llm=llm_groq,
+    )
+
+
+def get_mapper() -> Agent:
+    """
+    Crea l'agente che converte appunti testuali in diagrammi Mermaid.js.
+
+    Returns:
+        Agent CrewAI senza tool, specializzato nella visualizzazione gerarchica.
+    """
+    return Agent(
+        role="Architetto dell'Informazione",
+        goal="Trasformare concetti testuali in diagrammi di flusso visivi",
+        backstory=(
+            "Sei un esperto di visualizzazione dati. Conosci perfettamente la sintassi "
+            "di Mermaid.js. Il tuo unico scopo è prendere appunti e convertirli in un "
+            "diagramma gerarchico chiaro e conciso."
+        ),
+        llm=llm_groq_small,
     )
