@@ -1,4 +1,4 @@
-"""Interfaccia Streamlit dell'app UniAgent - Mentore Socratico e Mappa Concettuale."""
+"""Interfaccia Streamlit dell'app UniAgent - Spiegazione, Mentore e Mappa."""
 
 import re
 
@@ -10,6 +10,7 @@ from src.tasks import (
     create_evaluation_tasks,
     create_map_tasks,
     create_question_tasks,
+    create_study_tasks,
 )
 
 
@@ -73,6 +74,21 @@ if "domanda_generata" not in st.session_state:
 if "argomento" not in st.session_state:
     st.session_state.argomento = ""
 
+# Risultati persistenti: restano visibili anche cambiando modalità nella sidebar.
+if "res_spiegazione" not in st.session_state:
+    st.session_state.res_spiegazione = ""
+if "res_mappa" not in st.session_state:
+    st.session_state.res_mappa = ""
+if "res_valutazione" not in st.session_state:
+    st.session_state.res_valutazione = ""
+
+
+def pulisci_risultati() -> None:
+    """Resetta a stringa vuota tutti i risultati persistenti delle modalità."""
+    st.session_state.res_spiegazione = ""
+    st.session_state.res_mappa = ""
+    st.session_state.res_valutazione = ""
+
 
 def reset_simulazione() -> None:
     """Riporta la modalità Mentore Socratico allo step 1, pulendo i dati correnti."""
@@ -94,15 +110,62 @@ with st.sidebar:
 
     modalita: str = st.radio(
         "Modalità di Studio",
-        options=["Mentore Socratico", "Mappa Concettuale"],
+        options=[
+            "Spiegazione Accademica",
+            "Mentore Socratico",
+            "Mappa Concettuale",
+        ],
         index=0,
     )
 
+    st.divider()
+
+    if st.button("Pulisci Risultati"):
+        pulisci_risultati()
+        st.rerun()
+
+
+# --------------------- MODALITÀ: SPIEGAZIONE ACCADEMICA ---------------------
+if modalita == "Spiegazione Accademica":
+    st.title("📖 UniAgent - Spiegazione Accademica")
+
+    # --- INPUT: in cima alla pagina ---
+    argomento_studio: str = st.text_area(
+        "Argomento o domanda (lascia vuoto per un riassunto generale)",
+        height=120,
+        placeholder="Esempio: Spiegami in dettaglio il teorema di Bayes",
+    )
+
+    if st.button("Genera Spiegazione", type="primary"):
+        if not nome_pdf.strip():
+            st.warning("Inserisci il nome del file PDF nella sidebar.")
+        else:
+            with st.spinner("Il Professore sta preparando la spiegazione..."):
+                task_studio = create_study_tasks(
+                    domanda_studente=argomento_studio,
+                    nome_file_pdf=nome_pdf,
+                )
+                crew_studio: Crew = Crew(
+                    tasks=task_studio,
+                    process=Process.sequential,
+                )
+                risultato_studio = crew_studio.kickoff()
+
+            st.session_state.res_spiegazione = str(risultato_studio)
+            st.rerun()
+
+    # --- OUTPUT: in fondo alla pagina ---
+    if st.session_state.res_spiegazione:
+        st.divider()
+        st.success("Ecco la tua spiegazione:")
+        st.markdown(st.session_state.res_spiegazione)
+
 
 # ----------------------- MODALITÀ: MENTORE SOCRATICO -----------------------
-if modalita == "Mentore Socratico":
+elif modalita == "Mentore Socratico":
     st.title("🎓 UniAgent - Mentore Socratico")
 
+    # --- INPUT: in cima alla pagina ---
     # STEP 1: scelta dell'argomento e generazione della domanda d'esame.
     if st.session_state.step == 1:
         st.subheader("Step 1 · Scegli l'argomento da ripassare")
@@ -135,10 +198,11 @@ if modalita == "Mentore Socratico":
                 st.session_state.step = 2
                 st.rerun()
 
-    # STEP 2: risposta dello studente e valutazione.
+    # STEP 2: domanda dell'Examiner, risposta dello studente e valutazione.
     elif st.session_state.step == 2:
         st.subheader("Step 2 · Rispondi alla domanda dell'Examiner")
 
+        # La domanda dell'Examiner resta sopra l'area di risposta.
         st.info(
             f"🎓 **Il Professore chiede:**\n\n{st.session_state.domanda_generata}"
         )
@@ -171,19 +235,26 @@ if modalita == "Mentore Socratico":
                         )
                         risultato_valutazione = crew_valutazione.kickoff()
 
-                    st.success("Ecco il tuo feedback:")
-                    st.markdown(str(risultato_valutazione))
+                    st.session_state.res_valutazione = str(risultato_valutazione)
+                    st.rerun()
 
         with colonna_reset:
             if st.button("Cambia Argomento"):
                 reset_simulazione()
                 st.rerun()
 
+    # --- OUTPUT: il feedback finale appare sempre in fondo al blocco. ---
+    if st.session_state.res_valutazione:
+        st.divider()
+        st.success("Ecco il tuo ultimo feedback:")
+        st.markdown(st.session_state.res_valutazione)
+
 
 # ----------------------- MODALITÀ: MAPPA CONCETTUALE -----------------------
 elif modalita == "Mappa Concettuale":
     st.title("🗺️ UniAgent - Mappa Concettuale")
 
+    # --- INPUT: in cima alla pagina ---
     argomento_mappa: str = st.text_area(
         "Argomento da mappare",
         height=120,
@@ -205,4 +276,10 @@ elif modalita == "Mappa Concettuale":
                 )
                 risultato_mappa = crew_mappa.kickoff()
 
-            render_mermaid(str(risultato_mappa))
+            st.session_state.res_mappa = str(risultato_mappa)
+            st.rerun()
+
+    # --- OUTPUT: in fondo alla pagina ---
+    if st.session_state.res_mappa:
+        st.divider()
+        render_mermaid(st.session_state.res_mappa)

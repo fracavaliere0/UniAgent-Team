@@ -1,8 +1,67 @@
-"""Definizione dei task CrewAI per i flussi di interrogazione e valutazione."""
+"""Definizione dei task CrewAI per i flussi di studio, interrogazione e mappa."""
 
 from crewai import Task
 
-from src.agents import get_examiner, get_librarian, get_mapper
+from src.agents import get_examiner, get_librarian, get_mapper, get_professor
+
+
+def create_study_tasks(domanda_studente: str, nome_file_pdf: str) -> list[Task]:
+    """
+    Crea i task per produrre una spiegazione accademica a partire da un PDF.
+
+    Flusso:
+        1. Il Librarian estrae dal PDF le informazioni utili.
+        2. Il Professor le rielabora in una spiegazione accademica in Markdown.
+
+    Se ``domanda_studente`` è vuoto, viene chiesto un riassunto generale
+    dei contenuti del documento.
+
+    Args:
+        domanda_studente: Quesito o argomento; se vuoto si genera un riassunto.
+        nome_file_pdf: Nome del PDF presente in data/raw_pdfs/.
+
+    Returns:
+        Lista ordinata dei task da eseguire nel workflow CrewAI.
+    """
+    librarian = get_librarian()
+    professor = get_professor()
+
+    # Se la domanda è assente, chiede un riassunto generale del documento.
+    domanda_effettiva: str = (
+        domanda_studente.strip()
+        if domanda_studente and domanda_studente.strip()
+        else "Fornisci un riassunto generale dei contenuti principali del documento."
+    )
+
+    # 1) Ricerca delle informazioni rilevanti nel PDF.
+    task_ricerca: Task = Task(
+        description=(
+            f"Usa il tuo tool per leggere il file PDF '{nome_file_pdf}' e cerca tutte "
+            f"le informazioni utili per rispondere alla seguente richiesta dello "
+            f"studente: '{domanda_effettiva}'."
+        ),
+        expected_output=(
+            "Un riassunto in formato testo con i passaggi chiave estratti dal documento."
+        ),
+        agent=librarian,
+    )
+
+    # 2) Rielaborazione in spiegazione accademica formattata in Markdown.
+    task_spiegazione: Task = Task(
+        description=(
+            f"Prendi gli appunti forniti dal Librarian e crea una lezione per lo "
+            f"studente basata sulla seguente richiesta: '{domanda_effettiva}'. "
+            f"Mantieni un tono accademico e chiaro, basandoti unicamente sui dati "
+            f"forniti dal Librarian."
+        ),
+        expected_output=(
+            "Una spiegazione discorsiva, formattata in Markdown, "
+            "chiara e con tono accademico."
+        ),
+        agent=professor,
+    )
+
+    return [task_ricerca, task_spiegazione]
 
 
 def create_question_tasks(argomento: str, nome_file_pdf: str) -> list[Task]:
