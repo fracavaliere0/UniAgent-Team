@@ -1,10 +1,15 @@
 """Interfaccia Streamlit dell'app UniAgent - Spiegazione, Mentore e Mappa."""
 
+import base64
+import os
 import re
 
+import markdown
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from crewai import Crew, Process
+from fpdf import FPDF
 
 from src.tasks import (
     create_evaluation_tasks,
@@ -12,6 +17,75 @@ from src.tasks import (
     create_question_tasks,
     create_study_tasks,
 )
+
+
+def genera_pdf(testo: str) -> bytes:
+    """
+    Genera un PDF in memoria a partire da un testo in formato Markdown.
+
+    Converte il Markdown in HTML con la libreria ``markdown`` e lo scrive
+    tramite ``FPDF.write_html``, in modo da preservare grassetti, titoli e
+    liste puntate. Usa Helvetica (font standard) e gestisce automaticamente
+    le interruzioni di pagina; i caratteri non rappresentabili in latin-1
+    vengono sostituiti per evitare errori di encoding.
+
+    Args:
+        testo: Testo della spiegazione in Markdown.
+
+    Returns:
+        Il PDF generato come bytes, pronto per il download.
+    """
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=12)
+
+    # Pulizia: forza l'a capo prima di ogni '*' o '-' di elenco che il modello
+    # potrebbe aver scritto inline rispetto al testo precedente.
+    testo_pulito: str = testo.replace(" * ", "\n* ").replace(" - ", "\n- ")
+    # Conversione Markdown -> HTML per mantenere la formattazione (h1/h2, **bold**, liste, ecc.).
+    html_testo: str = markdown.markdown(testo_pulito)
+    # Helvetica supporta solo latin-1: sostituiamo i caratteri non rappresentabili.
+    html_safe: str = html_testo.encode("latin-1", "replace").decode("latin-1")
+    pdf.write_html(html_safe)
+
+    output = pdf.output(dest="S")
+    if isinstance(output, str):
+        return output.encode("latin-1", "replace")
+    return bytes(output)
+
+
+def ottieni_immagine_mermaid(codice_mermaid: str) -> bytes:
+    """
+    Converte un blocco di codice Mermaid in un'immagine PNG via mermaid.ink.
+
+    Pulisce eventuali tag ```mermaid``` di apertura/chiusura, codifica il
+    codice in Base64 URL-safe e interroga il servizio https://mermaid.ink/.
+
+    Args:
+        codice_mermaid: Testo grezzo contenente il diagramma Mermaid.
+
+    Returns:
+        Bytes dell'immagine PNG restituita dall'API.
+    """
+    # Estrae il codice dentro al blocco markdown ```mermaid ... ``` se presente.
+    pattern = r"```mermaid\s*(.*?)\s*```"
+    match = re.search(pattern, codice_mermaid, re.DOTALL)
+    codice_pulito: str = match.group(1).strip() if match else codice_mermaid.strip()
+
+    codice_base64: str = base64.urlsafe_b64encode(
+        codice_pulito.encode("utf-8")
+    ).decode("ascii")
+
+    url: str = f"https://mermaid.ink/img/{codice_base64}"
+    response = requests.get(url, timeout=30)
+    if response.status_code != 200:
+        # Mermaid.ink risponde con 4xx/5xx quando la sintassi non e' valida
+        # o il servizio non riesce a renderizzare il diagramma.
+        raise RuntimeError(
+            f"Mermaid.ink ha restituito status code {response.status_code}."
+        )
+    return response.content
 
 
 def render_mermaid(payload: str) -> None:
@@ -101,10 +175,25 @@ def reset_simulazione() -> None:
 with st.sidebar:
     st.header("Impostazioni Studio 📚")
 
-    nome_pdf: str = st.text_input(
-        "Nome del file PDF (in data/raw_pdfs/)",
-        value="test.pdf",
-    )
+    file_caricato = st.file_uploader("Carica il tuo PDF", type=["pdf"])
+
+    # Se l'utente ha caricato un PDF, lo salva in data/raw_pdfs/ con il nome
+    # originale così da renderlo disponibile al PDFSearchTool degli agenti.
+    nome_pdf: str = ""
+    if file_caricato is not None:
+        cartella_pdf: str = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "data",
+            "raw_pdfs",
+        )
+        os.makedirs(cartella_pdf, exist_ok=True)
+
+        percorso_destinazione: str = os.path.join(cartella_pdf, file_caricato.name)
+        with open(percorso_destinazione, "wb") as file_destinazione:
+            file_destinazione.write(file_caricato.getbuffer())
+
+        nome_pdf = file_caricato.name
+        st.success(f"PDF caricato: {nome_pdf}")
 
     st.divider()
 
@@ -137,8 +226,8 @@ if modalita == "Spiegazione Accademica":
     )
 
     if st.button("Genera Spiegazione", type="primary"):
-        if not nome_pdf.strip():
-            st.warning("Inserisci il nome del file PDF nella sidebar.")
+        if file_caricato is None:
+            st.warning("Per favore, carica un file PDF prima di iniziare.")
         else:
             with st.spinner("Il Professore sta preparando la spiegazione..."):
                 task_studio = create_study_tasks(
@@ -160,6 +249,14 @@ if modalita == "Spiegazione Accademica":
         st.success("Ecco la tua spiegazione:")
         st.markdown(st.session_state.res_spiegazione)
 
+        pdf_bytes: bytes = genera_pdf(st.session_state.res_spiegazione)
+        st.download_button(
+            label="📥 Scarica PDF",
+            data=pdf_bytes,
+            file_name="spiegazione.pdf",
+            mime="application/pdf",
+        )
+
 
 # ----------------------- MODALITÀ: MENTORE SOCRATICO -----------------------
 elif modalita == "Mentore Socratico":
@@ -177,10 +274,10 @@ elif modalita == "Mentore Socratico":
         )
 
         if st.button("Genera Domanda", type="primary"):
-            if not nome_pdf.strip() or not argomento.strip():
-                st.warning(
-                    "Inserisci sia il nome del PDF sia l'argomento da ripassare."
-                )
+            if file_caricato is None:
+                st.warning("Per favore, carica un file PDF prima di iniziare.")
+            elif not argomento.strip():
+                st.warning("Inserisci l'argomento da ripassare.")
             else:
                 with st.spinner("L'Examiner sta preparando una domanda sfidante..."):
                     task_domanda = create_question_tasks(
@@ -217,7 +314,9 @@ elif modalita == "Mentore Socratico":
 
         with colonna_valuta:
             if st.button("Valuta", type="primary"):
-                if not risposta_studente.strip():
+                if file_caricato is None:
+                    st.warning("Per favore, carica un file PDF prima di iniziare.")
+                elif not risposta_studente.strip():
                     st.warning(
                         "Scrivi una risposta prima di chiedere la valutazione."
                     )
@@ -262,8 +361,10 @@ elif modalita == "Mappa Concettuale":
     )
 
     if st.button("Genera Mappa", type="primary"):
-        if not nome_pdf.strip() or not argomento_mappa.strip():
-            st.warning("Inserisci sia il nome del PDF sia l'argomento da mappare.")
+        if file_caricato is None:
+            st.warning("Per favore, carica un file PDF prima di iniziare.")
+        elif not argomento_mappa.strip():
+            st.warning("Inserisci l'argomento da mappare.")
         else:
             with st.spinner("Il Mapper sta costruendo la mappa concettuale..."):
                 task_mappa = create_map_tasks(
@@ -283,3 +384,24 @@ elif modalita == "Mappa Concettuale":
     if st.session_state.res_mappa:
         st.divider()
         render_mermaid(st.session_state.res_mappa)
+
+        # Recupera l'immagine PNG via mermaid.ink per offrire il download.
+        # Se la sintassi e' troppo complessa o il servizio non risponde,
+        # non mostriamo il bottone di download per evitare crash dell'app.
+        try:
+            immagine_bytes: bytes = ottieni_immagine_mermaid(
+                st.session_state.res_mappa
+            )
+            st.download_button(
+                label="🖼️ Scarica Mappa (PNG)",
+                data=immagine_bytes,
+                file_name="mappa.png",
+                mime="image/png",
+            )
+        except Exception as errore_generazione:
+            st.error(
+                "⚠️ La mappa generata contiene una sintassi troppo complessa "
+                "e non può essere convertita in PNG. Riprova a generarla!"
+            )
+            st.error("Ops! Errore di generazione.")
+            st.exception(errore_generazione)
